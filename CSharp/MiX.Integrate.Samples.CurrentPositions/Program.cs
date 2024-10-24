@@ -52,7 +52,7 @@ namespace MiX.Integrate.Samples.CurrentPositions
 				}
 
 				var positionClient = new PositionsClient(apiBaseUrl, idServerResourceOwnerClientSettings);
-				var lastRequest = DateTime.MinValue;
+				var lastRequest = DateTime.UtcNow.AddDays(-3);
 				var groupList = new List<long> { group.GroupId };
 				for (int i = 0; i < INTERATIONS; i++)
 				{

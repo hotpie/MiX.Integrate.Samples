@@ -1,14 +1,20 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Configuration;
+using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
 using MiX.Integrate.Api.Client;
 using MiX.Integrate.Shared.Entities.Assets;
+using MiX.Integrate.Shared.Entities.Drivers;
 using MiX.Integrate.Shared.Entities.Groups;
+using MiX.Integrate.Shared.Entities.LibraryEvents;
 using MiX.Integrate.Shared.Entities.Positions;
+using Newtonsoft.Json;
 
 namespace MiX.Integrate.Samples.PositionStream
 {
@@ -40,17 +46,22 @@ namespace MiX.Integrate.Samples.PositionStream
 
 		private static async Task ShowPositions()
 		{
+			await SavePositions().ConfigureAwait(false);
+
+			return;
+		}
+
+		private static async Task SavePositions()
+		{
 			try
 			{
-				//
+				string getSinceToken = "20241020060000000";
+
 				// Retrieve base URI from configuration file:
 				var apiBaseUrl = ConfigurationManager.AppSettings["ApiUrl"];
 				Console.WriteLine($"Connecting to: {apiBaseUrl}");
 
-				//
 				// Retrieve security settings from configuration file:
-				//  note:  the helper client does the authentication with these settings and attached the
-				//         returned token to all other calls.
 				var idServerResourceOwnerClientSettings = new IdServerResourceOwnerClientSettings()
 				{
 					BaseAddress = ConfigurationManager.AppSettings["IdentityServerBaseAddress"],
@@ -61,7 +72,6 @@ namespace MiX.Integrate.Samples.PositionStream
 					Scopes = ConfigurationManager.AppSettings["IdentityServerScopes"]
 				};
 
-				//
 				// Retrieve list of groups the authenticated user has access to:
 				var groups = await GetAvailableOrganisationsAsync(apiBaseUrl, idServerResourceOwnerClientSettings);
 				if ((groups?.Count ?? 0) < 1)
@@ -71,60 +81,22 @@ namespace MiX.Integrate.Samples.PositionStream
 					Console.WriteLine("No available organisations found - terminating.");
 					return;
 				}
+				
 				// the rest of this sample will only process using the first available organisation
-				var group = groups[36];// 0];
+				var group = groups[0];// 0];
 
-				//
-				// Retrieve a list of Assets available in the organisation
-				var assets = await GetAssetsAsync(group.GroupId, apiBaseUrl, idServerResourceOwnerClientSettings);
-				if (assets.Count < 1)
-				{
-					Console.WriteLine("");
-					Console.WriteLine("=======================================================================");
-					Console.WriteLine($"No assets found for {group.Name}, terminating.");
-					return;
-				}
-				else
-				{
-					Console.WriteLine($"{assets.Count} assets found for {group.Name}.");
-				}
+				List<Asset> assets = await SaveAssets(apiBaseUrl, idServerResourceOwnerClientSettings, group);
 
+				await SaveDrivers(apiBaseUrl, idServerResourceOwnerClientSettings, group, assets);
+				await SaveEventsLibruary(apiBaseUrl, idServerResourceOwnerClientSettings, group, assets);
 
 				//
 				// For this sample code the start point will be 1 hour before the sample
 				// is executed. In a production service this sould only be seeded on
 				// first execution and persisted between executions so that the stream
 				// is read correctly
-				string getSinceToken = DateTime.UtcNow.AddHours(-1).ToString("yyyyMMddHHmmssfff");
+				getSinceToken = await SavePositions(apiBaseUrl, idServerResourceOwnerClientSettings, group, getSinceToken).ConfigureAwait(false);
 
-				//
-				// Setup helper client and go into process loop
-				var positionClient = new PositionsClient(apiBaseUrl, idServerResourceOwnerClientSettings);
-				var groupIds = new List<long> { group.GroupId };
-				do
-				{
-					Console.WriteLine("");
-					Console.WriteLine("=======================================================================");
-					Console.WriteLine("Requesting positions....");
-
-					var haveMoreItems = false;
-					do
-					{
-						var requestResult = await positionClient.GetCreatedSinceForGroupsAsync(groupIds, "Asset", getSinceToken, 50).ConfigureAwait(false);
-						haveMoreItems = requestResult.HasMoreItems;
-						var positions = requestResult.Items;
-						Console.WriteLine($"Retrieved {positions.Count} positions.");
-
-						ProcessPositions(positions, assets);
-
-						// persist token for next retrieval.
-						getSinceToken =  requestResult.GetSinceToken ;
-					} while (haveMoreItems);
-
-					//
-					// pause to prevent excessive calls to API.
-					await Task.Delay(30000, _cancelToken); //wait 30 seconds
-				} while (!_cancelToken.IsCancellationRequested);
 			}
 			catch (Exception ex)
 			{
@@ -139,8 +111,115 @@ namespace MiX.Integrate.Samples.PositionStream
 				Console.WriteLine("=======================================================================");
 				Console.WriteLine("");
 			}
+		}
 
-			return;
+		private static async Task<string> SavePositions(string apiBaseUrl, IdServerResourceOwnerClientSettings idServerResourceOwnerClientSettings, Group group, string getSinceToken)
+		{
+			//
+			// Setup helper client and go into process loop
+			var positionClient = new PositionsClient(apiBaseUrl, idServerResourceOwnerClientSettings);
+			var groupIds = new List<long> { group.GroupId };
+			do
+			{
+				Console.WriteLine("");
+				Console.WriteLine("=======================================================================");
+				Console.WriteLine("Requesting positions....");
+
+				var haveMoreItems = false;
+				do
+				{
+					await Task.Delay(3000, _cancelToken); //wait 3 seconds
+
+					var requestResult = await positionClient.GetCreatedSinceForGroupsAsync(groupIds, "Asset", getSinceToken, 1000).ConfigureAwait(false);
+
+					haveMoreItems = requestResult.HasMoreItems;
+					var positions = requestResult.Items;
+
+					// Parse the datetime string into a DateTime object using the exact format
+					DateTime datetime;
+					if (DateTime.TryParseExact(getSinceToken, "yyyyMMddHHmmssfff", CultureInfo.InvariantCulture, DateTimeStyles.None, out datetime))
+					{
+						Console.WriteLine($"SinceToken: {datetime.ToString("dd, HH:mm ddd")}  Retrieved {positions.Count} positions. ");
+					}
+
+					//ProcessPositions(positions, assets);
+					var jsonData = JsonConvert.SerializeObject(positions, Formatting.Indented);
+
+					// Generate a timestamped filename
+					var filePath = $"c:\\mix\\avi\\positions\\positions_{getSinceToken}.json";
+
+					// Write the JSON string to the file
+					SaveFile(jsonData, filePath);
+
+					// persist token for next retrieval.
+					getSinceToken = requestResult.GetSinceToken;
+				} while (haveMoreItems);
+
+				//
+				// pause to prevent excessive calls to API.
+				Console.WriteLine("wait 30 seconds");
+				await Task.Delay(30000, _cancelToken); //wait 30 seconds
+
+			} while (!_cancelToken.IsCancellationRequested);
+			return getSinceToken;
+		}
+
+		private static async Task SaveEventsLibruary(string apiBaseUrl, IdServerResourceOwnerClientSettings idServerResourceOwnerClientSettings, Group group, List<Asset> assets)
+		{
+			// Retrieve a list of libraryEvents available in the organisation
+			var libraryEvents = await GetLibraryEventsAsync(group.GroupId, apiBaseUrl, idServerResourceOwnerClientSettings);
+			if (libraryEvents.Count > 0)
+			{
+				var jsonData = JsonConvert.SerializeObject(libraryEvents, Formatting.Indented);
+				var filePath = $"c:\\mix\\avi\\libraryEvents\\libraryEvents.json";
+				SaveFile(jsonData, filePath);
+
+				Console.WriteLine("");
+				Console.WriteLine("=======================================================================");
+				Console.WriteLine($"{assets.Count} libraryEvents found for {group.Name}.");
+				Console.WriteLine($"{assets.Count} libraryEvents saved to file {filePath}.");
+			}
+		}
+
+		private static async Task SaveDrivers(string apiBaseUrl, IdServerResourceOwnerClientSettings idServerResourceOwnerClientSettings, Group group, List<Asset> assets)
+		{
+			// Retrieve a list of drivers available in the organisation
+			var drivers = await GetDriversAsync(group.GroupId, apiBaseUrl, idServerResourceOwnerClientSettings);
+			if (drivers.Count > 0)
+			{
+				var jsonData = JsonConvert.SerializeObject(drivers, Formatting.Indented);
+				var filePath = $"c:\\mix\\avi\\drivers\\drivers.json";
+				SaveFile(jsonData, filePath);
+
+				Console.WriteLine("");
+				Console.WriteLine("=======================================================================");
+				Console.WriteLine($"{assets.Count} drivers found for {group.Name}.");
+				Console.WriteLine($"{assets.Count} drivers saved to file {filePath}.");
+			}
+		}
+
+		private static async Task<List<Asset>> SaveAssets(string apiBaseUrl, IdServerResourceOwnerClientSettings idServerResourceOwnerClientSettings, Group group)
+		{
+			// Retrieve a list of Assets available in the organisation
+			var assets = await GetAssetsAsync(group.GroupId, apiBaseUrl, idServerResourceOwnerClientSettings);
+			if (assets.Count > 0)
+			{
+				var jsonData = JsonConvert.SerializeObject(assets, Formatting.Indented);
+				var filePath = $"c:\\mix\\avi\\assets\\assets.json";
+				SaveFile(jsonData, filePath);
+
+				Console.WriteLine("");
+				Console.WriteLine("=======================================================================");
+				Console.WriteLine($"{assets.Count} assets found for {group.Name}.");
+				Console.WriteLine($"{assets.Count} assets saved to file {filePath}.");
+			}
+
+			return assets;
+		}
+
+		private static void SaveFile(string jsonData, string fullPath)
+		{
+			File.WriteAllText(fullPath, jsonData);
 		}
 
 		private static async Task<List<Group>> GetAvailableOrganisationsAsync(string apiBaseUrl, IdServerResourceOwnerClientSettings idServerResourceOwnerClientSettings)
@@ -157,6 +236,21 @@ namespace MiX.Integrate.Samples.PositionStream
 			var assetsClient = new AssetsClient(apiBaseUrl, idServerResourceOwnerClientSettings);
 			var assets = await assetsClient.GetAllAsync(groupId);
 			return assets;
+		}
+
+		private static async Task<List<Driver>> GetDriversAsync(long groupId, string apiBaseUrl, IdServerResourceOwnerClientSettings idServerResourceOwnerClientSettings)
+		{
+			Console.WriteLine("Retrieving Driver list...");
+			var driversClient = new DriversClient(apiBaseUrl, idServerResourceOwnerClientSettings);
+			var drivers = await driversClient.GetAllDriversAsync(groupId);
+			return drivers;
+		}
+		private static async Task<IList<LibraryEvent>> GetLibraryEventsAsync(long groupId, string apiBaseUrl, IdServerResourceOwnerClientSettings idServerResourceOwnerClientSettings)
+		{
+			Console.WriteLine("Retrieving Driver list...");
+			var libraryEventsClient = new LibraryEventsClient(apiBaseUrl, idServerResourceOwnerClientSettings);
+			var libraryEvents = await libraryEventsClient.GetAllLibraryEventsAsync(groupId);
+			return libraryEvents;
 		}
 
 		private static void ProcessPositions(List<Position> positions, List<Asset> assets)
