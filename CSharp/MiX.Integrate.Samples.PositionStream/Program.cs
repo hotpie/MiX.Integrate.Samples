@@ -55,7 +55,7 @@ namespace MiX.Integrate.Samples.PositionStream
 		{
 			try
 			{
-				string getSinceToken = "20241020060000000";
+				string getSinceToken = "20241031000000000";
 
 				// Retrieve base URI from configuration file:
 				var apiBaseUrl = ConfigurationManager.AppSettings["ApiUrl"];
@@ -83,7 +83,7 @@ namespace MiX.Integrate.Samples.PositionStream
 				}
 				
 				// the rest of this sample will only process using the first available organisation
-				var group = groups[0];// 0];
+				var group = groups[1];// 0];
 
 				List<Asset> assets = await SaveAssets(apiBaseUrl, idServerResourceOwnerClientSettings, group);
 
@@ -95,6 +95,14 @@ namespace MiX.Integrate.Samples.PositionStream
 				// is executed. In a production service this sould only be seeded on
 				// first execution and persisted between executions so that the stream
 				// is read correctly
+
+				//getSinceToken = "20241108175246000";
+				//getSinceToken = await SaveTrips(apiBaseUrl, idServerResourceOwnerClientSettings, group, getSinceToken).ConfigureAwait(false);
+
+				//getSinceToken = "20241109051551000";
+				//getSinceToken = await SaveEvents(apiBaseUrl, idServerResourceOwnerClientSettings, group, getSinceToken).ConfigureAwait(false);
+
+				getSinceToken = "20241112144734000";
 				getSinceToken = await SavePositions(apiBaseUrl, idServerResourceOwnerClientSettings, group, getSinceToken).ConfigureAwait(false);
 
 			}
@@ -112,6 +120,112 @@ namespace MiX.Integrate.Samples.PositionStream
 				Console.WriteLine("");
 			}
 		}
+
+		private static async Task<string> SaveEvents(string apiBaseUrl, IdServerResourceOwnerClientSettings idServerResourceOwnerClientSettings, Group group, string getSinceToken)
+		{
+			//
+			// Setup helper client and go into process loop
+			var eventsClient = new EventsClient(apiBaseUrl, idServerResourceOwnerClientSettings);
+
+			var groupIds = new List<long> { group.GroupId };
+			do
+			{
+				Console.WriteLine("");
+				Console.WriteLine("=======================================================================");
+				Console.WriteLine("Requesting events....");
+
+				var haveMoreItems = false;
+				do
+				{
+					await Task.Delay(3000, _cancelToken); //wait 3 seconds
+
+					var requestResult = await eventsClient.GetCreatedSinceForGroupsAsync(groupIds, "Driver", getSinceToken, 1000).ConfigureAwait(false);
+
+					haveMoreItems = requestResult.HasMoreItems;
+					var events = requestResult.Items;
+
+					// Parse the datetime string into a DateTime object using the exact format
+					DateTime datetime;
+					if (DateTime.TryParseExact(getSinceToken, "yyyyMMddHHmmssfff", CultureInfo.InvariantCulture, DateTimeStyles.None, out datetime))
+					{
+						Console.WriteLine($"SinceToken: {datetime.ToString("yyyy-MM-dd, HH:mm ddd")}  Retrieved {events.Count} events. ");
+					}
+
+					//ProcessPositions(positions, assets);
+					var jsonData = JsonConvert.SerializeObject(events, Formatting.Indented);
+
+					// Generate a timestamped filename
+					var filePath = $"c:\\mix\\9056302056092335278\\events\\events_{getSinceToken}.json";
+
+					// Write the JSON string to the file
+					SaveFile(jsonData, filePath);
+
+					// persist token for next retrieval.
+					getSinceToken = requestResult.GetSinceToken;
+				} while (haveMoreItems);
+
+				//
+				// pause to prevent excessive calls to API.
+				Console.WriteLine("wait 30 seconds");
+				await Task.Delay(30000, _cancelToken); //wait 30 seconds
+
+			} while (!_cancelToken.IsCancellationRequested);
+			return getSinceToken;
+		}
+
+
+		private static async Task<string> SaveTrips(string apiBaseUrl, IdServerResourceOwnerClientSettings idServerResourceOwnerClientSettings, Group group, string getSinceToken)
+		{
+			//
+			// Setup helper client and go into process loop
+			var tripsClient = new TripsClient(apiBaseUrl, idServerResourceOwnerClientSettings);
+
+			var groupIds = new List<long> { group.GroupId };
+			do
+			{
+				Console.WriteLine("");
+				Console.WriteLine("=======================================================================");
+				Console.WriteLine("Requesting trips....");
+
+				var haveMoreItems = false;
+				do
+				{
+					await Task.Delay(3000, _cancelToken); //wait 3 seconds
+
+					var requestResult = await tripsClient.GetCreatedSinceForGroupsAsync(groupIds, "Asset", getSinceToken, 1000).ConfigureAwait(false);
+
+					haveMoreItems = requestResult.HasMoreItems;
+					var trips = requestResult.Items;
+
+					// Parse the datetime string into a DateTime object using the exact format
+					DateTime datetime;
+					if (DateTime.TryParseExact(getSinceToken, "yyyyMMddHHmmssfff", CultureInfo.InvariantCulture, DateTimeStyles.None, out datetime))
+					{
+						Console.WriteLine($"SinceToken: {datetime.ToString("yyyy-MM-dd, HH:mm ddd")}  Retrieved {trips.Count} trips. ");
+					}
+
+					//ProcessPositions(positions, assets);
+					var jsonData = JsonConvert.SerializeObject(trips, Formatting.Indented);
+
+					// Generate a timestamped filename
+					var filePath = $"c:\\mix\\9056302056092335278\\trips\\trips_{getSinceToken}.json";
+
+					// Write the JSON string to the file
+					SaveFile(jsonData, filePath);
+
+					// persist token for next retrieval.
+					getSinceToken = requestResult.GetSinceToken;
+				} while (haveMoreItems);
+
+				//
+				// pause to prevent excessive calls to API.
+				Console.WriteLine("wait 30 seconds");
+				await Task.Delay(30000, _cancelToken); //wait 30 seconds
+
+			} while (!_cancelToken.IsCancellationRequested);
+			return getSinceToken;
+		}
+
 
 		private static async Task<string> SavePositions(string apiBaseUrl, IdServerResourceOwnerClientSettings idServerResourceOwnerClientSettings, Group group, string getSinceToken)
 		{
@@ -139,14 +253,14 @@ namespace MiX.Integrate.Samples.PositionStream
 					DateTime datetime;
 					if (DateTime.TryParseExact(getSinceToken, "yyyyMMddHHmmssfff", CultureInfo.InvariantCulture, DateTimeStyles.None, out datetime))
 					{
-						Console.WriteLine($"SinceToken: {datetime.ToString("dd, HH:mm ddd")}  Retrieved {positions.Count} positions. ");
+						Console.WriteLine($"SinceToken: {datetime.ToString("yyyy-MM-dd, HH:mm ddd")}  Retrieved {positions.Count} positions. ");
 					}
 
 					//ProcessPositions(positions, assets);
 					var jsonData = JsonConvert.SerializeObject(positions, Formatting.Indented);
 
 					// Generate a timestamped filename
-					var filePath = $"c:\\mix\\avi\\positions\\positions_{getSinceToken}.json";
+					var filePath = $"c:\\mix\\9056302056092335278\\positions\\positions_{getSinceToken}.json";
 
 					// Write the JSON string to the file
 					SaveFile(jsonData, filePath);
@@ -171,13 +285,13 @@ namespace MiX.Integrate.Samples.PositionStream
 			if (libraryEvents.Count > 0)
 			{
 				var jsonData = JsonConvert.SerializeObject(libraryEvents, Formatting.Indented);
-				var filePath = $"c:\\mix\\avi\\libraryEvents\\libraryEvents.json";
+				var filePath = $"c:\\mix\\9056302056092335278\\eventslibrary\\eventslibrary.json";
 				SaveFile(jsonData, filePath);
 
 				Console.WriteLine("");
 				Console.WriteLine("=======================================================================");
-				Console.WriteLine($"{assets.Count} libraryEvents found for {group.Name}.");
-				Console.WriteLine($"{assets.Count} libraryEvents saved to file {filePath}.");
+				Console.WriteLine($"{libraryEvents.Count} libraryEvents found for {group.Name}.");
+				Console.WriteLine($"{libraryEvents.Count} libraryEvents saved to file {filePath}.");
 			}
 		}
 
@@ -188,13 +302,13 @@ namespace MiX.Integrate.Samples.PositionStream
 			if (drivers.Count > 0)
 			{
 				var jsonData = JsonConvert.SerializeObject(drivers, Formatting.Indented);
-				var filePath = $"c:\\mix\\avi\\drivers\\drivers.json";
+				var filePath = $"c:\\mix\\9056302056092335278\\drivers\\drivers.json";
 				SaveFile(jsonData, filePath);
 
 				Console.WriteLine("");
 				Console.WriteLine("=======================================================================");
-				Console.WriteLine($"{assets.Count} drivers found for {group.Name}.");
-				Console.WriteLine($"{assets.Count} drivers saved to file {filePath}.");
+				Console.WriteLine($"{drivers.Count} drivers found for {group.Name}.");
+				Console.WriteLine($"{drivers.Count} drivers saved to file {filePath}.");
 			}
 		}
 
@@ -205,7 +319,7 @@ namespace MiX.Integrate.Samples.PositionStream
 			if (assets.Count > 0)
 			{
 				var jsonData = JsonConvert.SerializeObject(assets, Formatting.Indented);
-				var filePath = $"c:\\mix\\avi\\assets\\assets.json";
+				var filePath = $"c:\\mix\\9056302056092335278\\assets\\assets.json";
 				SaveFile(jsonData, filePath);
 
 				Console.WriteLine("");
