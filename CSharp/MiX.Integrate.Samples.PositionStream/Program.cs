@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Configuration;
 using System.Globalization;
@@ -7,8 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-
-using MiX.Integrate.Api.Client;
+using MiX.Integrate.API.Client;
 using MiX.Integrate.Shared.Entities.Assets;
 using MiX.Integrate.Shared.Entities.Drivers;
 using MiX.Integrate.Shared.Entities.Groups;
@@ -96,14 +94,14 @@ namespace MiX.Integrate.Samples.PositionStream
 				// first execution and persisted between executions so that the stream
 				// is read correctly
 
-				//getSinceToken = "20241108175246000";
+				//getSinceToken = "20241112104137000";
 				//getSinceToken = await SaveTrips(apiBaseUrl, idServerResourceOwnerClientSettings, group, getSinceToken).ConfigureAwait(false);
 
-				//getSinceToken = "20241109051551000";
-				//getSinceToken = await SaveEvents(apiBaseUrl, idServerResourceOwnerClientSettings, group, getSinceToken).ConfigureAwait(false);
+				getSinceToken = "20241112125317000";
+				getSinceToken = await SaveEvents(apiBaseUrl, idServerResourceOwnerClientSettings, group, getSinceToken).ConfigureAwait(false);
 
-				getSinceToken = "20241112144734000";
-				getSinceToken = await SavePositions(apiBaseUrl, idServerResourceOwnerClientSettings, group, getSinceToken).ConfigureAwait(false);
+				//getSinceToken = "20241113103718000";
+				//getSinceToken = await SavePositions(apiBaseUrl, idServerResourceOwnerClientSettings, group, getSinceToken).ConfigureAwait(false);
 
 			}
 			catch (Exception ex)
