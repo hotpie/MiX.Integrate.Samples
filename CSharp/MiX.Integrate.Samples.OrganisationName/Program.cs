@@ -3,7 +3,8 @@ using System.Collections.Generic;
 using System.Configuration;
 using System.Threading.Tasks;
 
-using MiX.Integrate.Api.Client;
+using MiX.Integrate;
+using MiX.Integrate.API.Client;
 using MiX.Integrate.Shared.Entities.Groups;
 
 namespace MiX.Integrate.Samples.OrganisationDetails
@@ -31,6 +32,7 @@ namespace MiX.Integrate.Samples.OrganisationDetails
 			try
 			{
 				var allowedOrganisations = await GetAllowedOrganisationsAsync(apiBaseUrl, idServerResourceOwnerClientSettings);
+				//var something = await get
 				PrintOrganisationDetails(allowedOrganisations);
 			}
 			catch (Exception ex)

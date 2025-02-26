@@ -94,11 +94,11 @@ namespace MiX.Integrate.Samples.PositionStream
 				// first execution and persisted between executions so that the stream
 				// is read correctly
 
-				//getSinceToken = "20241112104137000";
-				//getSinceToken = await SaveTrips(apiBaseUrl, idServerResourceOwnerClientSettings, group, getSinceToken).ConfigureAwait(false);
+				getSinceToken = "20241116000000000";
+				getSinceToken = await SaveTrips(apiBaseUrl, idServerResourceOwnerClientSettings, group, getSinceToken).ConfigureAwait(false);
 
-				getSinceToken = "20241112125317000";
-				getSinceToken = await SaveEvents(apiBaseUrl, idServerResourceOwnerClientSettings, group, getSinceToken).ConfigureAwait(false);
+				//getSinceToken = "20241112125317000";
+				//getSinceToken = await SaveEvents(apiBaseUrl, idServerResourceOwnerClientSettings, group, getSinceToken).ConfigureAwait(false);
 
 				//getSinceToken = "20241113103718000";
 				//getSinceToken = await SavePositions(apiBaseUrl, idServerResourceOwnerClientSettings, group, getSinceToken).ConfigureAwait(false);
