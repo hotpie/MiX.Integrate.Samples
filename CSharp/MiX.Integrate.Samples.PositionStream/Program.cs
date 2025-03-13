@@ -53,7 +53,7 @@ namespace MiX.Integrate.Samples.PositionStream
 		{
 			try
 			{
-				string getSinceToken = "20241031000000000";
+				string getSinceToken = "20250305000000000";
 
 				// Retrieve base URI from configuration file:
 				var apiBaseUrl = ConfigurationManager.AppSettings["ApiUrl"];
@@ -79,29 +79,35 @@ namespace MiX.Integrate.Samples.PositionStream
 					Console.WriteLine("No available organisations found - terminating.");
 					return;
 				}
-				
+
 				// the rest of this sample will only process using the first available organisation
-				var group = groups[1];// 0];
+				var group = groups[0];
+
+				Properties.Settings.Default.GroupId = group.GroupId;
+				Properties.Settings.Default.Organisation = group.Name;
+
+				Properties.Settings.Default.Save();
+
+				Console.WriteLine("=======================================================================");
+				Console.WriteLine("GroupId: {0}", group.GroupId);
+				Console.WriteLine("Organisations: {0}", group.Name);
+				Console.WriteLine("=======================================================================");
 
 				List<Asset> assets = await SaveAssets(apiBaseUrl, idServerResourceOwnerClientSettings, group);
 
 				await SaveDrivers(apiBaseUrl, idServerResourceOwnerClientSettings, group, assets);
 				await SaveEventsLibruary(apiBaseUrl, idServerResourceOwnerClientSettings, group, assets);
+			
+				await SaveTrips(apiBaseUrl, idServerResourceOwnerClientSettings, group, getSinceToken).ConfigureAwait(false);
+				await SaveEvents(apiBaseUrl, idServerResourceOwnerClientSettings, group, getSinceToken).ConfigureAwait(false);
+				await SavePositions(apiBaseUrl, idServerResourceOwnerClientSettings, group, getSinceToken).ConfigureAwait(false);
 
-				//
-				// For this sample code the start point will be 1 hour before the sample
-				// is executed. In a production service this sould only be seeded on
-				// first execution and persisted between executions so that the stream
-				// is read correctly
 
-				getSinceToken = "20241116000000000";
-				getSinceToken = await SaveTrips(apiBaseUrl, idServerResourceOwnerClientSettings, group, getSinceToken).ConfigureAwait(false);
-
-				//getSinceToken = "20241112125317000";
-				//getSinceToken = await SaveEvents(apiBaseUrl, idServerResourceOwnerClientSettings, group, getSinceToken).ConfigureAwait(false);
-
-				//getSinceToken = "20241113103718000";
-				//getSinceToken = await SavePositions(apiBaseUrl, idServerResourceOwnerClientSettings, group, getSinceToken).ConfigureAwait(false);
+				Console.WriteLine("Last getSinceToken: {0}", getSinceToken);
+				Console.WriteLine("");
+				Console.WriteLine("=======================================================================");
+				Console.WriteLine("Press any key to exit.");
+				Console.ReadKey();
 
 			}
 			catch (Exception ex)
@@ -121,158 +127,168 @@ namespace MiX.Integrate.Samples.PositionStream
 
 		private static async Task<string> SaveEvents(string apiBaseUrl, IdServerResourceOwnerClientSettings idServerResourceOwnerClientSettings, Group group, string getSinceToken)
 		{
+			getSinceToken = Properties.Settings.Default.LastSaveEventsToken;
+
 			//
 			// Setup helper client and go into process loop
 			var eventsClient = new EventsClient(apiBaseUrl, idServerResourceOwnerClientSettings);
 
 			var groupIds = new List<long> { group.GroupId };
+			
+			Console.WriteLine("");
+			Console.WriteLine("=======================================================================");
+			Console.WriteLine("Requesting events....{0}", getSinceToken);
+
+			var haveMoreItems = false;
 			do
 			{
-				Console.WriteLine("");
-				Console.WriteLine("=======================================================================");
-				Console.WriteLine("Requesting events....");
+				await Task.Delay(3000, _cancelToken); //wait 3 seconds
 
-				var haveMoreItems = false;
-				do
+				var requestResult = await eventsClient.GetCreatedSinceForGroupsAsync(groupIds, "Driver", getSinceToken, 1000).ConfigureAwait(false);
+
+				haveMoreItems = requestResult.HasMoreItems;
+				var events = requestResult.Items;
+
+				// Parse the datetime string into a DateTime object using the exact format
+				DateTime datetime;
+				if (DateTime.TryParseExact(getSinceToken, "yyyyMMddHHmmssfff", CultureInfo.InvariantCulture, DateTimeStyles.None, out datetime))
 				{
-					await Task.Delay(3000, _cancelToken); //wait 3 seconds
+					Console.WriteLine($"SinceToken: {datetime.ToString("yyyy-MM-dd, HH:mm ddd")}  Retrieved {events.Count} events. ");
+				}
 
-					var requestResult = await eventsClient.GetCreatedSinceForGroupsAsync(groupIds, "Driver", getSinceToken, 1000).ConfigureAwait(false);
+				//ProcessPositions(positions, assets);
+				var jsonData = JsonConvert.SerializeObject(events, Formatting.Indented);
 
-					haveMoreItems = requestResult.HasMoreItems;
-					var events = requestResult.Items;
+				// Generate a timestamped filename
+				var filePath = $"c:\\mix\\8432556611772062753\\_json\\events\\events_{getSinceToken}.json";
 
-					// Parse the datetime string into a DateTime object using the exact format
-					DateTime datetime;
-					if (DateTime.TryParseExact(getSinceToken, "yyyyMMddHHmmssfff", CultureInfo.InvariantCulture, DateTimeStyles.None, out datetime))
-					{
-						Console.WriteLine($"SinceToken: {datetime.ToString("yyyy-MM-dd, HH:mm ddd")}  Retrieved {events.Count} events. ");
-					}
+				// Write the JSON string to the file
+				SaveFile(jsonData, filePath);
 
-					//ProcessPositions(positions, assets);
-					var jsonData = JsonConvert.SerializeObject(events, Formatting.Indented);
+				// persist token for next retrieval.
+				getSinceToken = requestResult.GetSinceToken;
+			} while (haveMoreItems);
 
-					// Generate a timestamped filename
-					var filePath = $"c:\\mix\\9056302056092335278\\events\\events_{getSinceToken}.json";
+			//
+			// pause to prevent excessive calls to API.
+			Console.WriteLine("wait 30 seconds");
+			await Task.Delay(30000, _cancelToken); //wait 30 seconds
 
-					// Write the JSON string to the file
-					SaveFile(jsonData, filePath);
-
-					// persist token for next retrieval.
-					getSinceToken = requestResult.GetSinceToken;
-				} while (haveMoreItems);
-
-				//
-				// pause to prevent excessive calls to API.
-				Console.WriteLine("wait 30 seconds");
-				await Task.Delay(30000, _cancelToken); //wait 30 seconds
-
-			} while (!_cancelToken.IsCancellationRequested);
+			//} while (!_cancelToken.IsCancellationRequested);
+			Properties.Settings.Default.LastSaveEventsToken = getSinceToken;
+			Properties.Settings.Default.Save();
 			return getSinceToken;
 		}
 
 
 		private static async Task<string> SaveTrips(string apiBaseUrl, IdServerResourceOwnerClientSettings idServerResourceOwnerClientSettings, Group group, string getSinceToken)
 		{
+			getSinceToken = Properties.Settings.Default.LastSaveTripsToken;
 			//
 			// Setup helper client and go into process loop
 			var tripsClient = new TripsClient(apiBaseUrl, idServerResourceOwnerClientSettings);
 
 			var groupIds = new List<long> { group.GroupId };
+			//do
+			//{
+			Console.WriteLine("");
+			Console.WriteLine("=======================================================================");
+			Console.WriteLine("Requesting trips....{0}", getSinceToken);
+
+			var haveMoreItems = false;
 			do
 			{
-				Console.WriteLine("");
-				Console.WriteLine("=======================================================================");
-				Console.WriteLine("Requesting trips....");
+				await Task.Delay(3000, _cancelToken); //wait 3 seconds
 
-				var haveMoreItems = false;
-				do
+				var requestResult = await tripsClient.GetCreatedSinceForGroupsAsync(groupIds, "Asset", getSinceToken, 1000).ConfigureAwait(false);
+
+				haveMoreItems = requestResult.HasMoreItems;
+				var trips = requestResult.Items;
+
+				// Parse the datetime string into a DateTime object using the exact format
+				DateTime datetime;
+				if (DateTime.TryParseExact(getSinceToken, "yyyyMMddHHmmssfff", CultureInfo.InvariantCulture, DateTimeStyles.None, out datetime))
 				{
-					await Task.Delay(3000, _cancelToken); //wait 3 seconds
+					Console.WriteLine($"SinceToken: {datetime.ToString("yyyy-MM-dd, HH:mm ddd")}  Retrieved {trips.Count} trips. ");
+				}
 
-					var requestResult = await tripsClient.GetCreatedSinceForGroupsAsync(groupIds, "Asset", getSinceToken, 1000).ConfigureAwait(false);
+				//ProcessPositions(positions, assets);
+				var jsonData = JsonConvert.SerializeObject(trips, Formatting.Indented);
 
-					haveMoreItems = requestResult.HasMoreItems;
-					var trips = requestResult.Items;
+				// Generate a timestamped filename
+				var filePath = $"c:\\mix\\8432556611772062753\\_json\\trips\\trips_{getSinceToken}.json";
 
-					// Parse the datetime string into a DateTime object using the exact format
-					DateTime datetime;
-					if (DateTime.TryParseExact(getSinceToken, "yyyyMMddHHmmssfff", CultureInfo.InvariantCulture, DateTimeStyles.None, out datetime))
-					{
-						Console.WriteLine($"SinceToken: {datetime.ToString("yyyy-MM-dd, HH:mm ddd")}  Retrieved {trips.Count} trips. ");
-					}
+				// Write the JSON string to the file
+				SaveFile(jsonData, filePath);
 
-					//ProcessPositions(positions, assets);
-					var jsonData = JsonConvert.SerializeObject(trips, Formatting.Indented);
+				// persist token for next retrieval.
+				getSinceToken = requestResult.GetSinceToken;
+			} while (haveMoreItems);
 
-					// Generate a timestamped filename
-					var filePath = $"c:\\mix\\9056302056092335278\\trips\\trips_{getSinceToken}.json";
+			//
+			// pause to prevent excessive calls to API.
+			Console.WriteLine("wait 30 seconds");
+			await Task.Delay(30000, _cancelToken); //wait 30 seconds
 
-					// Write the JSON string to the file
-					SaveFile(jsonData, filePath);
+			//} while (!_cancelToken.IsCancellationRequested);
+			Properties.Settings.Default.LastSaveTripsToken = getSinceToken;
+			Properties.Settings.Default.Save();
 
-					// persist token for next retrieval.
-					getSinceToken = requestResult.GetSinceToken;
-				} while (haveMoreItems);
-
-				//
-				// pause to prevent excessive calls to API.
-				Console.WriteLine("wait 30 seconds");
-				await Task.Delay(30000, _cancelToken); //wait 30 seconds
-
-			} while (!_cancelToken.IsCancellationRequested);
 			return getSinceToken;
 		}
 
 
 		private static async Task<string> SavePositions(string apiBaseUrl, IdServerResourceOwnerClientSettings idServerResourceOwnerClientSettings, Group group, string getSinceToken)
 		{
+			getSinceToken = Properties.Settings.Default.LastSavePositionsToken;
+
 			//
 			// Setup helper client and go into process loop
 			var positionClient = new PositionsClient(apiBaseUrl, idServerResourceOwnerClientSettings);
 			var groupIds = new List<long> { group.GroupId };
+			
+			Console.WriteLine("");
+			Console.WriteLine("=======================================================================");
+			Console.WriteLine("Requesting positions....{0}", getSinceToken);
+
+			var haveMoreItems = false;
 			do
 			{
-				Console.WriteLine("");
-				Console.WriteLine("=======================================================================");
-				Console.WriteLine("Requesting positions....");
+				await Task.Delay(3000, _cancelToken); //wait 3 seconds
 
-				var haveMoreItems = false;
-				do
+				var requestResult = await positionClient.GetCreatedSinceForGroupsAsync(groupIds, "Asset", getSinceToken, 1000).ConfigureAwait(false);
+
+				haveMoreItems = requestResult.HasMoreItems;
+				var positions = requestResult.Items;
+
+				// Parse the datetime string into a DateTime object using the exact format
+				DateTime datetime;
+				if (DateTime.TryParseExact(getSinceToken, "yyyyMMddHHmmssfff", CultureInfo.InvariantCulture, DateTimeStyles.None, out datetime))
 				{
-					await Task.Delay(3000, _cancelToken); //wait 3 seconds
+					Console.WriteLine($"SinceToken: {datetime.ToString("yyyy-MM-dd, HH:mm ddd")}  Retrieved {positions.Count} positions. ");
+				}
 
-					var requestResult = await positionClient.GetCreatedSinceForGroupsAsync(groupIds, "Asset", getSinceToken, 1000).ConfigureAwait(false);
+				//ProcessPositions(positions, assets);
+				var jsonData = JsonConvert.SerializeObject(positions, Formatting.Indented);
 
-					haveMoreItems = requestResult.HasMoreItems;
-					var positions = requestResult.Items;
+				// Generate a timestamped filename
+				var filePath = $"c:\\mix\\8432556611772062753\\_json\\positions\\positions_{getSinceToken}.json";
 
-					// Parse the datetime string into a DateTime object using the exact format
-					DateTime datetime;
-					if (DateTime.TryParseExact(getSinceToken, "yyyyMMddHHmmssfff", CultureInfo.InvariantCulture, DateTimeStyles.None, out datetime))
-					{
-						Console.WriteLine($"SinceToken: {datetime.ToString("yyyy-MM-dd, HH:mm ddd")}  Retrieved {positions.Count} positions. ");
-					}
+				// Write the JSON string to the file
+				SaveFile(jsonData, filePath);
 
-					//ProcessPositions(positions, assets);
-					var jsonData = JsonConvert.SerializeObject(positions, Formatting.Indented);
+				// persist token for next retrieval.
+				getSinceToken = requestResult.GetSinceToken;
+			} while (haveMoreItems);
 
-					// Generate a timestamped filename
-					var filePath = $"c:\\mix\\9056302056092335278\\positions\\positions_{getSinceToken}.json";
+			//
+			// pause to prevent excessive calls to API.
+			Console.WriteLine("wait 30 seconds");
+			await Task.Delay(30000, _cancelToken); //wait 30 seconds
 
-					// Write the JSON string to the file
-					SaveFile(jsonData, filePath);
-
-					// persist token for next retrieval.
-					getSinceToken = requestResult.GetSinceToken;
-				} while (haveMoreItems);
-
-				//
-				// pause to prevent excessive calls to API.
-				Console.WriteLine("wait 30 seconds");
-				await Task.Delay(30000, _cancelToken); //wait 30 seconds
-
-			} while (!_cancelToken.IsCancellationRequested);
+			//} while (!_cancelToken.IsCancellationRequested);
+			Properties.Settings.Default.LastSavePositionsToken = getSinceToken;
+			Properties.Settings.Default.Save();
 			return getSinceToken;
 		}
 
@@ -283,7 +299,7 @@ namespace MiX.Integrate.Samples.PositionStream
 			if (libraryEvents.Count > 0)
 			{
 				var jsonData = JsonConvert.SerializeObject(libraryEvents, Formatting.Indented);
-				var filePath = $"c:\\mix\\9056302056092335278\\eventslibrary\\eventslibrary.json";
+				var filePath = $"c:\\mix\\8432556611772062753\\_json\\eventslibrary\\eventslibrary.json";
 				SaveFile(jsonData, filePath);
 
 				Console.WriteLine("");
@@ -300,7 +316,7 @@ namespace MiX.Integrate.Samples.PositionStream
 			if (drivers.Count > 0)
 			{
 				var jsonData = JsonConvert.SerializeObject(drivers, Formatting.Indented);
-				var filePath = $"c:\\mix\\9056302056092335278\\drivers\\drivers.json";
+				var filePath = $"c:\\mix\\8432556611772062753\\_json\\drivers\\drivers.json";
 				SaveFile(jsonData, filePath);
 
 				Console.WriteLine("");
@@ -317,7 +333,7 @@ namespace MiX.Integrate.Samples.PositionStream
 			if (assets.Count > 0)
 			{
 				var jsonData = JsonConvert.SerializeObject(assets, Formatting.Indented);
-				var filePath = $"c:\\mix\\9056302056092335278\\assets\\assets.json";
+				var filePath = $"c:\\mix\\8432556611772062753\\_json\\assets\\assets.json";
 				SaveFile(jsonData, filePath);
 
 				Console.WriteLine("");
@@ -372,15 +388,15 @@ namespace MiX.Integrate.Samples.PositionStream
 
 			// Join postion and asset lists to be able to print Asset registration number and position.
 			foreach (var item in from pos in positions
-													 join ast in assets on pos.AssetId equals ast.AssetId
-													 select new
-													 {
-														 Registration = ast.RegistrationNumber,
-														 Timestamp = pos.Timestamp,
-														 Latitude = pos.Latitude,
-														 Longitutde = pos.Longitude,
-														 Odometer = pos.OdometerKilometres
-													 })
+								 join ast in assets on pos.AssetId equals ast.AssetId
+								 select new
+								 {
+									 Registration = ast.RegistrationNumber,
+									 Timestamp = pos.Timestamp,
+									 Latitude = pos.Latitude,
+									 Longitutde = pos.Longitude,
+									 Odometer = pos.OdometerKilometres
+								 })
 			{
 				Console.WriteLine($"{item.Registration,-15}  {item.Timestamp}  {item.Latitude:N6} - {item.Longitutde:N6}  {item.Odometer,10:N1} Km");
 			}
