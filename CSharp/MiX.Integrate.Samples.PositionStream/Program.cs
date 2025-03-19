@@ -241,7 +241,7 @@ namespace MiX.Integrate.Samples.PositionStream
 		private static async Task<string> SavePositions(string apiBaseUrl, IdServerResourceOwnerClientSettings idServerResourceOwnerClientSettings, Group group, string getSinceToken)
 		{
 			getSinceToken = Properties.Settings.Default.LastSavePositionsToken;
-
+			getSinceToken = "20250316225454000";
 			//
 			// Setup helper client and go into process loop
 			var positionClient = new PositionsClient(apiBaseUrl, idServerResourceOwnerClientSettings);
@@ -277,6 +277,9 @@ namespace MiX.Integrate.Samples.PositionStream
 				// Write the JSON string to the file
 				SaveFile(jsonData, filePath);
 
+				Properties.Settings.Default.LastSavePositionsToken = getSinceToken;
+				Properties.Settings.Default.Save();
+
 				// persist token for next retrieval.
 				getSinceToken = requestResult.GetSinceToken;
 			} while (haveMoreItems);
@@ -287,8 +290,8 @@ namespace MiX.Integrate.Samples.PositionStream
 			await Task.Delay(30000, _cancelToken); //wait 30 seconds
 
 			//} while (!_cancelToken.IsCancellationRequested);
-			Properties.Settings.Default.LastSavePositionsToken = getSinceToken;
-			Properties.Settings.Default.Save();
+
+			
 			return getSinceToken;
 		}
 
